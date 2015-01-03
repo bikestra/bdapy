@@ -31,7 +31,7 @@ tumor_df.head(20)
 # $$
 # p(\alpha,\beta \mid y) = p(\alpha,\beta) \prod_{j=1}^J 
 #     \frac{\Gamma(\alpha+\beta)}{\Gamma(\alpha)\Gamma(\beta)}
-#     \frac{\Gamma(\alpha+\beta+n_j)}{\Gamma(\alpha+y_j) \Gamma(\beta+n_j-y_j)}
+#     \frac{\Gamma(\alpha+y_j) \Gamma(\beta+n_j-y_j)}{\Gamma(\alpha+\beta+n_j)}
 # $$
 # Now let us plot the marginal posterior density.  As instructed in the book, here we reparametrize hyperparameters to be $\log(\frac \alpha \beta)$ and $\log(\alpha + \beta)$.  As always, when computing a density function it is safer to do it in log-scale.
 

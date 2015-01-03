@@ -5,7 +5,7 @@
 
 # # Hierarchical Bayesian Inference of Binomial Probabilities (BDA 5.3) #
 # 
-# This notebook attempts to reproduce analysis in Chapter 5.3 of Bayesian Data Analysis (Gelman et al, 3rd Edition).  
+# This notebook attempts to reproduce analysis in Chapter 5.3 of the book 'Bayesian Data Analysis' by Gelman et al (3rd Edition).  
 # 
 # Here, we are given $J=71$ observations of binomial outcomes $(y_1,N_1), \ldots, (y_J,N_J)$ where $y_j \sim \text{Bin}(N_j, \theta_j)$.  We assume conjugate prior $\theta_j \sim \text{Beta}(\alpha,\beta)$, and a "reasonable" hyperprior density $p(\alpha,\beta) \propto (\alpha+\beta)^{-5/2}$; refer to the chapter regarding why this is a reasonable choice.  Given this hierarchical model, we perform fully Bayesian analysis.
 

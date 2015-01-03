@@ -9,5 +9,5 @@ Hopefully this is a useful resource for other people as well.
 
 Here is the list of notebooks I wrote:
 
-* [Chapter 5.3. Hierarchical Bayesian Inference of Binomial Probabilities](http://nbviewer.ipython.org/github/bikestra/bdapy/blob/master/ch5_3_rat_tumor.ipynb)
-* [Chapter 5.4 ~ 6. Hierarchical Bayesian Inference of Group Normal Means](http://nbviewer.ipython.org/github/bikestra/bdapy/blob/master/ch5_4-5-6_hierarchical_normal.ipynb)
+* [Chapter 5.3. Hierarchical Bayesian Inference of Binomial Probabilities (on rat tumor data)](http://nbviewer.ipython.org/github/bikestra/bdapy/blob/master/ch5_3_rat_tumor.ipynb)
+* [Chapter 5.4 ~ 6. Hierarchical Bayesian Inference of Group Normal Means (on SAT coaching data and beta-blocker data)](http://nbviewer.ipython.org/github/bikestra/bdapy/blob/master/ch5_4-5-6_hierarchical_normal.ipynb)

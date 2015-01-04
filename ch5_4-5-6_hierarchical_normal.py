@@ -5,6 +5,8 @@
 
 # # Hierarchical Bayesian Inference of Normal Means #
 # 
+# This notebook is based on Chapter 5.4, 5.5 and 5.6 of 'Bayesian Data Analysis' (Gelman et. al, 3rd Edition).
+# 
 # Suppose we have $J$ observations $\bar{y}_{\cdot j} \mid \theta_j \sim \text{N}(\theta_j, \sigma_j^2)$, conditionally independent of each other given its parameters.  The variance parameter $\sigma_j^2$ is assumed to be known, and the mean parameter $\theta_j$'s are independently sampled from prior $\text{N}(\mu, \tau^2)$.  Finally, we assign uniform hyperprior distribution for $\mu$ given $\tau$:
 # $$
 # p(\mu,\tau) = p(\mu \mid \tau) p(\tau) \propto p(\tau).
@@ -17,7 +19,7 @@
 
 # <markdowncell>
 
-# ## BDA 5.5. Parallel Experiments in Eight Schools ##
+# ## Parallel Experiments in Eight Schools (BDA 5.5) ##
 # 
 # Please refer to the corresponding chapter of the book for description of the data.  I typed the data myself:
 
@@ -158,23 +160,32 @@ sample_num = 200
 tau_probs = posterior_tau_densities / posterior_tau_densities.sum()
 samples_tau = np.random.choice(tau_knots, sample_num, p=tau_probs)
 # now sample mu conditioned on tau
-def sample_means_from_tau(tau, means, serrs):
+def sample_means_from_tau(tau, means, serrs, include_mu=False):
     marginal_variances = serrs ** 2 + tau ** 2
     total_variance = 1.0/np.sum(1.0/marginal_variances)
     # precision weighted average
     mu_hat = np.sum((1.0/marginal_variances) * means) / \
             np.sum(1.0/marginal_variances)
     sample_mu = np.random.normal(loc=mu_hat, scale=np.sqrt(total_variance))
-    
+    if tau == 0:
+        if include_mu:
+            return np.repeat(sample_mu, len(means) + 1)
+        else:
+            return np.repeat(sample_mu, len(means))
     conditional_means = \
         ((1.0/(serrs ** 2)) * means + 1.0/(tau ** 2) * sample_mu) /\
         (1.0/(serrs ** 2) + 1.0/(tau ** 2))
     conditional_scales = np.sqrt(1.0 / (1.0/(serrs ** 2) + 1.0/(tau ** 2)))
-    return np.random.normal(loc=conditional_means,
-                            scale=conditional_scales)
+    if include_mu == True:
+        return np.concatenate(([sample_mu],
+                               np.random.normal(loc=conditional_means,
+                                                scale=conditional_scales)))
+    else:
+        return np.random.normal(loc=conditional_means,
+                                scale=conditional_scales)
         
 sample_means_from_taus = \
-        np.vectorize(sample_means_from_tau, otypes=[np.ndarray], excluded=[1,2])
+        np.vectorize(sample_means_from_tau, otypes=[np.ndarray], excluded=[1,2,3])
 
 samples_df = DataFrame.from_records(sample_means_from_taus(samples_tau, school_data.means, school_data.serrs),
                                     columns=school_data.index)
@@ -226,6 +237,232 @@ np.mean(samples_df.max(axis=1) > 28.4)
 # <codecell>
 
 np.mean(samples_df['A'] > samples_df['C'])
+
+# <markdowncell>
+
+# ## Clinical Trials of Beta-blockers (BDA 5.6) ##
+# 
+# Here, we perform a meta-analysis which estimates the effect of beta-blockers from 22 clinical trials.  Since a lot of plots are omitted in this chapter of the book, this notebook might be interesting for someone who wanted to take a deeper look on this analysis. 
+# 
+# The data can be retrieved from the BDA book website:
+
+# <codecell>
+
+blocker_data = read_csv("http://www.stat.columbia.edu/~gelman/book/data/meta.asc",
+                        index_col='study', skiprows=3, delim_whitespace=True)
+
+# <codecell>
+
+blocker_data
+
+# <markdowncell>
+
+# Our estimand in this analysis is log odds ratio; this is estimated by empirical logit which sampling variance is estimated by eq (5.24).  We regard these values as means and variances of hierarchical normal means model.  First, let us calculate these values:
+
+# <codecell>
+
+blocker_data['means'] = np.log(blocker_data['treated.deaths']\
+                               /(blocker_data['treated.total']-blocker_data['treated.deaths'])) \
+                        - np.log(blocker_data['control.deaths']\
+                               /(blocker_data['control.total']-blocker_data['control.deaths']))
+blocker_data['serrs'] = np.sqrt(1.0/blocker_data['treated.deaths'] + 
+                                1.0/(blocker_data['treated.total'] - 1.0/blocker_data['treated.deaths']) + 
+                                1.0/blocker_data['control.deaths'] + 
+                                1.0/(blocker_data['control.total'] - 1.0/blocker_data['control.deaths']))                                
+
+# <codecell>
+
+import pylab as pl
+# grid points to evaluate evaluate density function
+tau_min = 0; tau_max = 0.6; tau_grid_num = 1000
+tau_knots = np.linspace(tau_min, tau_max, tau_grid_num)
+lop_posterior_tau_densities = \
+    log_posterior_tau(tau_knots, blocker_data.means, 
+                      blocker_data.serrs, log_prior=lambda tau: 0)
+# when calculating densities, it is numerically more stable to 
+# first compute in log space, subtract the maximum, and then exponentiate
+posterior_tau_densities = \
+        np.exp(lop_posterior_tau_densities - np.max(lop_posterior_tau_densities))
+#np.exp(log_posterior_tau_densities - log_posterior_tau_densities.max())
+pl.plot(tau_knots, posterior_tau_densities, color='k', linestyle='-', linewidth=1)
+pl.axes().set_xlabel(r'$\tau$')
+# the y-axis of unnormalized posterior means nothing, so rather hide the scale
+pl.axes().get_yaxis().set_visible(False)
+
+# <markdowncell>
+
+# As mentioned in the book, the marginal posterior density function of $\tau$ peaks at nonzero value, but still values around zero are quite plausible.
+# 
+# The plot below shows mean effects conditioned on $\tau$; combined with the information from plot above, this indicates that moderate amount of shrinkage in estimates are necessary.
+
+# <codecell>
+
+def mean_posterior_given_tau(tau, means, serrs):
+    assert(len(means) == len(serrs))
+    marginal_variances = serrs ** 2 + tau ** 2
+    total_variance = 1.0/np.sum(1.0/marginal_variances)
+    # precision weighted average
+    mu_hat = np.sum((1.0/marginal_variances) * means) / \
+            np.sum(1.0/marginal_variances)
+    if tau == 0:
+        return np.repeat(mu_hat, len(means))
+    return ((1.0/(serrs ** 2)) * means + 1.0/(tau ** 2) * mu_hat) / (1.0/(serrs ** 2) + 1.0/(tau ** 2))
+
+def sd_posterior_given_tau(tau, serrs):
+    marginal_variances = serrs ** 2 + tau ** 2
+    total_variance = 1.0/np.sum(1.0/marginal_variances)
+    individual_variances = (((serrs ** 2)/(serrs ** 2 + tau ** 2)) ** 2) * total_variance
+    if tau == 0:
+        return np.sqrt(individual_variances)
+    return np.sqrt(individual_variances + 1.0 / (1.0/(serrs ** 2) + 1.0/(tau ** 2)))
+
+mean_posterior_given_taus = \
+    np.vectorize(mean_posterior_given_tau, otypes=[np.ndarray], excluded=[1,2])
+tau_conditional_means = \
+        pandas.DataFrame.from_records(mean_posterior_given_taus(tau_knots, blocker_data.means, blocker_data.serrs),
+                                      index=tau_knots, columns=blocker_data.index)
+    
+sd_posterior_given_taus = \
+    np.vectorize(sd_posterior_given_tau, otypes=[np.ndarray], excluded=[1])
+tau_conditional_sds = \
+        pandas.DataFrame.from_records(sd_posterior_given_taus(tau_knots, blocker_data.serrs),
+                                      index = tau_knots, columns=blocker_data.index)
+# I was not able to put inline labels in Python. 
+# this page contains an example code for it: http://stackoverflow.com/questions/16992038/inline-labels-in-matplotlib
+tau_conditional_means.plot()
+pl.legend(bbox_to_anchor=(1.05, 1), loc=2)
+pl.ylim(-1,0.5)
+pl.axes().set_xlabel(r'$\tau$')
+pl.show()
+
+# <markdowncell>
+
+# Now let us sample from the joint posterior distribution.
+
+# <codecell>
+
+# seed the RNG
+np.random.seed(1353135)
+sample_num = 5000
+# first sample tau's
+tau_probs = posterior_tau_densities / posterior_tau_densities.sum()
+samples_tau = np.random.choice(tau_knots, sample_num, p=tau_probs)
+# now sample mu conditioned on tau
+samples_df = DataFrame.from_records(sample_means_from_taus(samples_tau, blocker_data.means, 
+                                                           blocker_data.serrs, include_mu=True),
+                                    columns=np.concatenate((['mu'],blocker_data.index)))
+
+# <codecell>
+
+samples_columns_df = samples_df.drop('mu', 1)
+
+# <markdowncell>
+
+# Posterior quantiles in Table 5.4 can now be reproduced.
+
+# <codecell>
+
+samples_columns_df.quantile([0.025,0.25,0.5,0.75,0.975]).transpose().apply(lambda x:np.round(x,decimals=2))
+
+# <markdowncell>
+
+# Now let us sample predicted effects.
+
+# <codecell>
+
+samples_predicted_effect = np.zeros(len(samples_tau))
+samples_predicted_effect[samples_tau > 0] = np.random.normal(loc=samples_df['mu'][samples_tau > 0],scale=samples_tau[samples_tau > 0])
+samples_predicted_effect[samples_tau == 0] = samples_df['mu'][samples_tau == 0]
+
+# <markdowncell>
+
+# Now Table 5.5 can be reproduced.
+
+# <codecell>
+
+DataFrame({'mean':samples_df['mu'], 
+           'standard deviation':samples_tau, 
+           'predicted_effect':samples_predicted_effect}).quantile([0.025,0.25,0.5,0.75,0.975]).transpose().apply(lambda x:np.round(x,decimals=2))
+
+# <markdowncell>
+
+# Histograms of estimates, not shown in the book, are presented below.
+
+# <codecell>
+
+samples_columns_df.hist(figsize=(12,12),sharex=True, bins=20)
+
+# <codecell>
+
+def mean_posterior_of_mean_given_tau(tau, means, serrs):
+    assert(len(means) == len(serrs))
+    marginal_variances = serrs ** 2 + tau ** 2
+    total_variance = 1.0/np.sum(1.0/marginal_variances)
+    # precision weighted average
+    mu_hat = np.sum((1.0/marginal_variances) * means) / \
+            np.sum(1.0/marginal_variances)
+    return mu_hat
+
+def sd_posterior_of_mean_given_tau(tau, means, serrs):
+    assert(len(means) == len(serrs))
+    marginal_variances = serrs ** 2 + tau ** 2
+    total_variance = 1.0/np.sum(1.0/marginal_variances)
+    return np.sqrt(total_variance)
+
+mean_posterior_of_mean_given_taus = \
+    np.vectorize(mean_posterior_of_mean_given_tau, otypes=[np.ndarray], excluded=[1,2])
+sd_posterior_of_mean_given_taus = \
+    np.vectorize(sd_posterior_of_mean_given_tau, otypes=[np.ndarray], excluded=[1,2])
+
+# <markdowncell>
+
+# Recall this was the posterior density of $\tau$:
+
+# <codecell>
+
+pl.plot(tau_knots, posterior_tau_densities, color='k', linestyle='-', linewidth=1)
+pl.axes().set_xlabel(r'$\tau$')
+# the y-axis of unnormalized posterior means nothing, so rather hide the scale
+pl.axes().get_yaxis().set_visible(False)
+
+# <markdowncell>
+
+# Compared to the posterior quantile values of data, the conditional $\mu \mid \tau$ changes very little within most plausible region of $\tau$.
+
+# <codecell>
+
+pl.plot(tau_knots, mean_posterior_of_mean_given_taus(tau_knots, blocker_data.means, blocker_data.serrs))
+#pl.ylim((-0.6,0.1))
+pl.axes().set_xlabel(r'$E[\mu \mid \tau,y]$')
+
+# <markdowncell>
+
+# However, the standard deviation changes greatly.
+
+# <codecell>
+
+pl.plot(tau_knots, sd_posterior_of_mean_given_taus(tau_knots, blocker_data.means, blocker_data.serrs))
+pl.axes().set_xlabel(r'sd$[\mu \mid \tau,y]$')
+
+# <markdowncell>
+
+# The book comments the value of $\text{sd}(\mu \mid \tau,y)$ at $\tau=0.13$:
+
+# <codecell>
+
+sd_posterior_of_mean_given_tau(0.13, blocker_data.means, blocker_data.serrs)
+
+# <markdowncell>
+
+# On the other hand, $\text{sd}(\mu \mid y)$, marginalized over $\tau$, can be computed from posterior samples as follows:
+
+# <codecell>
+
+samples_df['mu'].std()
+
+# <markdowncell>
+
+# Well this is a bit different from the value in the book, 0.071.  I wonder why...?
 
 # <codecell>
 

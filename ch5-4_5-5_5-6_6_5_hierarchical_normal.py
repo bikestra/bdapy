@@ -240,6 +240,56 @@ np.mean(samples_df['A'] > samples_df['C'])
 
 # <markdowncell>
 
+# ## Model Checking (BDA 6.5) ##
+# 
+# To check the model fit, we sample predictive data from posterior distribution and then measure its test statistics.
+
+# <codecell>
+
+samples_df.head(20)
+
+# <codecell>
+
+posterior_data_list = []
+for row_index, row in samples_df.iterrows():
+    posterior_data_list.append( np.random.normal(loc=row, scale=school_data.serrs) )
+posterior_data_df = DataFrame.from_records(posterior_data_list,
+                                           columns=school_data.index)
+
+# <codecell>
+
+pl.hist(posterior_data_df.max(axis=1), bins=20)
+pl.axes().set_xlabel(r'T(y) = max(y)')
+pl.axvline(school_data.means.max(), color='r', linestyle='dashed', linewidth=2)
+print "p-value: %.2f" % (np.sum(posterior_data_df.max(axis=1) > school_data.means.max())/float(len(posterior_data_df)))
+
+# <codecell>
+
+pl.hist(posterior_data_df.min(axis=1), bins=20)
+pl.axes().set_xlabel(r'T(y) = min(y)')
+pl.axvline(school_data.means.min(), color='r', linestyle='dashed', linewidth=2)
+print "p-value: %.2f" % (np.sum(posterior_data_df.min(axis=1) > school_data.means.min())/float(len(posterior_data_df)))
+
+# <codecell>
+
+pl.hist(posterior_data_df.mean(axis=1), bins=20)
+pl.axes().set_xlabel(r'T(y) = mean(y)')
+pl.axvline(school_data.means.mean(), color='r', linestyle='dashed', linewidth=2)
+print "p-value: %.2f" % (np.sum(posterior_data_df.mean(axis=1) > school_data.means.mean())/float(len(posterior_data_df)))
+
+# <codecell>
+
+pl.hist(posterior_data_df.std(axis=1), bins=20)
+pl.axes().set_xlabel(r'T(y) = sd(y)')
+pl.axvline(school_data.means.std(), color='r', linestyle='dashed', linewidth=2)
+print "p-value: %.2f" % (np.sum(posterior_data_df.std(axis=1) > school_data.means.std())/float(len(posterior_data_df)))
+
+# <markdowncell>
+
+# Surprisingly, these p-values are too close to what we have in the book, considering the small data size!
+
+# <markdowncell>
+
 # ## Clinical Trials of Beta-blockers (BDA 5.6) ##
 # 
 # Here, we perform a meta-analysis which estimates the effect of beta-blockers from 22 clinical trials.  Since a lot of plots are omitted in this chapter of the book, this notebook might be interesting for someone who wanted to take a deeper look on this analysis. 

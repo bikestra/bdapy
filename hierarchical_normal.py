@@ -161,6 +161,12 @@ tau_probs = posterior_tau_densities / posterior_tau_densities.sum()
 samples_tau = np.random.choice(tau_knots, sample_num, p=tau_probs)
 # now sample mu conditioned on tau
 def sample_means_from_tau(tau, means, serrs, include_mu=False):
+    if isinf(tau):
+        if include_mu:
+            raise ValueError("mu is not well defined when tau is infinity")
+        else:
+            return np.random.normal(loc=means, scale=serrs)
+
     marginal_variances = serrs ** 2 + tau ** 2
     total_variance = 1.0/np.sum(1.0/marginal_variances)
     # precision weighted average
@@ -172,6 +178,7 @@ def sample_means_from_tau(tau, means, serrs, include_mu=False):
             return np.repeat(sample_mu, len(means) + 1)
         else:
             return np.repeat(sample_mu, len(means))
+        
     conditional_means = \
         ((1.0/(serrs ** 2)) * means + 1.0/(tau ** 2) * sample_mu) /\
         (1.0/(serrs ** 2) + 1.0/(tau ** 2))
@@ -287,6 +294,119 @@ print "p-value: %.2f" % (np.sum(posterior_data_df.std(axis=1) > school_data.mean
 # <markdowncell>
 
 # Surprisingly, these p-values are too close to what we have in the book, considering the small data size!
+
+# <markdowncell>
+
+# ## Model Comparison based on predictive performance (BDA 7.3) ##
+# 
+# (Sorry for extreme low quality code with a lot of redundancies here; I quickly began tosmell something bad, but was too lazy to go back.)
+
+# <codecell>
+
+from scipy.stats import *
+# computing AIC
+# first, compute MLE estimate
+marginal_variances = school_data.serrs ** 2
+total_variance = 1.0/np.sum(1.0/marginal_variances)
+# precision weighted average
+mle_complete_pooling = np.sum((1.0/marginal_variances) * school_data.means) / np.sum(1.0/marginal_variances)
+mle_lpd_complete_pooling = norm.logpdf(school_data.means, loc=mle_complete_pooling, scale=school_data.serrs).sum()
+mle_lpd_no_pooling = norm.logpdf(school_data.means, loc=school_data.means, scale=school_data.serrs).sum()
+print "AIC for complete pooling: %.1f" % (-2 * mle_lpd_complete_pooling + 1 * 2)
+print "AIC for no pooling: %.1f" % (-2 * mle_lpd_no_pooling + 8 * 2)
+
+# <codecell>
+
+# computing DIC
+# here we increase sample number to improve the precision
+sample_num = 2000
+# sample 
+complete_pooling_samples_df = DataFrame.from_records(sample_means_from_taus(np.repeat(0,sample_num), school_data.means, school_data.serrs),
+                                                     columns=school_data.index)
+no_pooling_samples_df = DataFrame.from_records(sample_means_from_taus(np.repeat(float('inf'),sample_num), school_data.means, school_data.serrs),
+                                               columns=school_data.index)
+
+samples_tau = np.random.choice(tau_knots, sample_num, p=tau_probs)
+hierarchical_samples_df = DataFrame.from_records(sample_means_from_taus(samples_tau, school_data.means, school_data.serrs),
+                                                 columns=school_data.index)
+# first, compute expected mean from posterior distribution
+pmean_no_pooling = no_pooling_samples_df.mean()
+pmean_complete_pooling = complete_pooling_samples_df.mean()
+pmean_hierarchical = hierarchical_samples_df.mean()
+
+pmean_lpd_no_pooling = norm.logpdf(school_data.means, loc=pmean_no_pooling, scale=school_data.serrs).sum()
+pmean_lpd_complete_pooling = norm.logpdf(school_data.means, loc=pmean_complete_pooling, scale=school_data.serrs).sum()
+pmean_lpd_hierarchical = norm.logpdf(school_data.means, loc=pmean_hierarchical, scale=school_data.serrs).sum()
+
+print "-2lpd with no pooling: %.1f" % (-2 * pmean_lpd_no_pooling)
+print "-2lpd with complete pooling: %.1f" % (-2 * pmean_lpd_complete_pooling)
+print "-2lpd with hierarchical pooling: %.1f" % (-2 * pmean_lpd_hierarchical)
+
+pdic_no_pooling = 2 * (pmean_lpd_no_pooling - \
+    no_pooling_samples_df.apply(lambda x: norm.logpdf(school_data.means, loc=x, 
+                                                      scale=school_data.serrs),
+                                axis=1).sum(axis=1).mean())
+pdic_complete_pooling = 2 * (pmean_lpd_complete_pooling - \
+    complete_pooling_samples_df.apply(lambda x: norm.logpdf(school_data.means, loc=x, 
+                                                            scale=school_data.serrs), 
+                                      axis=1).sum(axis=1).mean())
+pdic_hierarchical = 2 * (pmean_lpd_hierarchical - \
+    hierarchical_samples_df.apply(lambda x: norm.logpdf(school_data.means, loc=x, 
+                                                        scale=school_data.serrs), axis=1).sum(axis=1).mean())
+print "p_DIC for no pooling: %.1f" % (pdic_no_pooling)
+print "p_DIC for complete pooling: %.1f" % (pdic_complete_pooling)
+print "p_DIC for hierarchical pooling: %.1f" % (pdic_hierarchical)
+
+print "DIC for no pooling: %.1f" % (-2 * pmean_lpd_no_pooling + 2 * pdic_no_pooling)
+print "DIC for complete pooling: %.1f" % (-2 * pmean_lpd_complete_pooling + 2 * pdic_complete_pooling)
+print "DIC for hierarchical pooling: %.1f" % (-2 * pmean_lpd_hierarchical + 2 * pdic_hierarchical)
+
+# <codecell>
+
+# WAIC computation
+# here I am not being careful in numerical precision; in principle I should've done these calculation in log space.
+lppd_no_pooling = np.log(no_pooling_samples_df.apply(lambda x: norm.pdf(school_data.means, loc=x, 
+                                                     scale=school_data.serrs), axis=1).mean(axis=0)).sum()
+lppd_complete_pooling = np.log(complete_pooling_samples_df.apply(lambda x: norm.pdf(school_data.means, loc=x, 
+                                                                 scale=school_data.serrs), axis=1).mean(axis=0)).sum()
+lppd_hierarchical = np.log(hierarchical_samples_df.apply(lambda x: norm.pdf(school_data.means, loc=x, 
+                                                                            scale=school_data.serrs), axis=1).mean(axis=0)).sum()
+print "-2lppd with no pooling: %.1f" % (-2 * lppd_no_pooling)
+print "-2lppd with complete pooling: %.1f" % (-2 * lppd_complete_pooling)
+print "-2lppd with hierarchical pooling: %.1f" % (-2 * lppd_hierarchical)
+
+pwaic_1_no_pooling = 2 * (lppd_no_pooling - 
+                          no_pooling_samples_df.apply(lambda x: norm.logpdf(school_data.means, loc=x, 
+                                                      scale=school_data.serrs), axis=1).mean(axis=0).sum())
+pwaic_1_complete_pooling = 2 * (lppd_complete_pooling - 
+                                complete_pooling_samples_df.apply(lambda x: norm.logpdf(school_data.means, loc=x, 
+                                                                  scale=school_data.serrs), axis=1).mean(axis=0).sum())
+pwaic_1_hierarchical = 2 * (lppd_hierarchical - 
+                            hierarchical_samples_df.apply(lambda x: norm.logpdf(school_data.means, loc=x, 
+                                                          scale=school_data.serrs), axis=1).mean(axis=0).sum())
+
+print "p_WAIC1 with no pooling: %.1f" % (pwaic_1_no_pooling)
+print "p_WAIC1 with complete pooling: %.1f" % (pwaic_1_complete_pooling)
+print "p_WAIC1 with hierarchical pooling: %.1f" % (pwaic_1_hierarchical)
+
+pwaic_2_no_pooling = no_pooling_samples_df.apply(lambda x: norm.logpdf(school_data.means, loc=x, 
+                                                 scale=school_data.serrs), axis=1).var(axis=0).sum()
+pwaic_2_complete_pooling = complete_pooling_samples_df.apply(lambda x: norm.logpdf(school_data.means, loc=x, 
+                                                 scale=school_data.serrs), axis=1).var(axis=0).sum()
+pwaic_2_hierarchical = hierarchical_samples_df.apply(lambda x: norm.logpdf(school_data.means, loc=x, 
+                                                 scale=school_data.serrs), axis=1).var(axis=0).sum()
+
+print "p_WAIC2 with no pooling: %.1f" % (pwaic_2_no_pooling)
+print "p_WAIC2 with complete pooling: %.1f" % (pwaic_2_complete_pooling)
+print "p_WAIC2 with hierarchical pooling: %.1f" % (pwaic_2_hierarchical)
+
+print "WAIC with no pooling: %.1f" % (-2 * (lppd_no_pooling - pwaic_2_no_pooling))
+print "WAIC with complete pooling: %.1f" % (-2 * (lppd_complete_pooling - pwaic_2_complete_pooling))
+print "WAIC with hierarchical pooling: %.1f" % (-2 * (lppd_hierarchical - pwaic_2_hierarchical))
+
+# <markdowncell>
+
+# LOOC is omitted since I am too lazy.
 
 # <markdowncell>
 

@@ -10,4 +10,4 @@ Hopefully this is a useful resource for other people as well.
 Here is the list of notebooks I wrote:
 
 * [Hierarchical Bayesian Inference of Binomial Probabilities (on rat tumor data, Chapter 5.3)](http://nbviewer.ipython.org/github/bikestra/bdapy/blob/master/ch5_3_rat_tumor.ipynb)
-* [Hierarchical Bayesian Inference of Group Normal Means (on SAT coaching data and beta-blocker data, Chapter 5.4, 5.5, 5.6, 6.5., 7.3)](http://nbviewer.ipython.org/github/bikestra/bdapy/blob/master/hierarchical_normal.ipynb)
+* [Hierarchical Bayesian Inference of Group Normal Means (on SAT coaching data and beta-blocker data, Chapter 5.4, 5.5, 5.6, 6.5, 7.3)](http://nbviewer.ipython.org/github/bikestra/bdapy/blob/master/hierarchical_normal.ipynb)

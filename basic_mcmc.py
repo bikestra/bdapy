@@ -57,7 +57,7 @@ def gibbs_bivariate(y1, y2, rho, start_theta1, start_theta2, num_samples):
 
 # <codecell>
 
-starting_points = [(2.5,2.5),(-2.5,2.5),(2.5,-2.5),(-2.5,-2.5)]
+starting_points = [(2.5,2.5),(-2.5,2.5),(2.5,-2.5),(-2.5,-2.5),(0,0)]
 plt.plot(zip(*starting_points)[0], zip(*starting_points)[1], 'ks')
 for start_theta1, start_theta2 in starting_points:
     theta1_samples, theta2_samples = gibbs_bivariate(0, 0, 0.8, start_theta1, start_theta2, 10)
@@ -102,17 +102,30 @@ plt.axes().set_aspect('equal')
 # <codecell>
 
 import scipy.stats as stats
-def metropolis_bivariate(y1, y2, start_theta1, start_theta2, num_samples):
-    theta1_samples = [start_theta1]
-    theta2_samples = [start_theta2]
+from scipy.stats import norm
+def metropolis_bivariate(y1, y2, start_theta1, start_theta2, num_samples, 
+                         include_start=True, include_loglik=False):
+    if include_start:
+        theta1_samples = [start_theta1]
+        theta2_samples = [start_theta2]
+    else:
+        theta1_samples = []
+        theta2_samples = []
+        
+    loglik_samples = []
     current_theta1 = start_theta1
     current_theta2 = start_theta2
-    current_log_prob = stats.norm.logpdf((current_theta1,current_theta2),loc=(0,0),scale=(1,1)).sum()
+    # somehow the book is using unnormalized log probability. don't know why.
+    current_log_prob = norm.logpdf((current_theta1,current_theta2),loc=(0,0),scale=(1,1)).sum() \
+            - norm.logpdf((0,0),loc=(0,0),scale=(1,1)).sum()
+    
     for i in xrange(num_samples):
         proposal_theta1, proposal_theta2 = np.random.normal(loc=(current_theta1, current_theta2),
                                                             scale=(0.2,0.2))
-        proposal_log_prob = stats.norm.logpdf((proposal_theta1,proposal_theta2),loc=(0,0),scale=(1,1)).sum()
-        
+        proposal_log_prob = norm.logpdf((proposal_theta1,proposal_theta2),
+                                         loc=(0,0),scale=(1,1)).sum() \
+                            - norm.logpdf((0,0),
+                                         loc=(0,0),scale=(1,1)).sum()
         if proposal_log_prob > current_log_prob:
             flag_accept = True
         else:
@@ -126,9 +139,15 @@ def metropolis_bivariate(y1, y2, start_theta1, start_theta2, num_samples):
             current_theta1 = proposal_theta1
             current_theta2 = proposal_theta2
             current_log_prob = proposal_log_prob
+            
         theta1_samples.append(current_theta1)
         theta2_samples.append(current_theta2)
-    return theta1_samples, theta2_samples
+        loglik_samples.append(current_log_prob)
+    
+    if include_loglik:
+        return theta1_samples, theta2_samples, loglik_samples
+    else:
+        return theta1_samples, theta2_samples
 
 # <markdowncell>
 
@@ -181,9 +200,38 @@ plt.xlim(-4,4)
 plt.ylim(-4,4)
 plt.axes().set_aspect('equal')
 
+# <markdowncell>
+
+# ## Assessing Convergence (BDA 11.4) ##
+# 
+# $\hat{R}$ can be used to monitor the convergence of MCMC sampling.  Table 11.1 is reproduced here:
+
 # <codecell>
 
-
-# <codecell>
-
+from pandas import *
+for num_iter in [50,500,2000,5000]:
+    seq_len = num_iter/2.0
+    dfs = []
+    print "When the number of iterations is: %d" % num_iter
+    for sequence_num, (start_theta1, start_theta2) in enumerate(starting_points):
+        theta1_samples, theta2_samples, loglik_samples =\
+                metropolis_bivariate(0, 0, start_theta1, start_theta2, num_iter,
+                                     False, True)
+        # convert samples into dataframe
+        theta1_samples_tail = theta1_samples[len(theta1_samples)/2:]
+        theta2_samples_tail = theta2_samples[len(theta2_samples)/2:]
+        loglik_samples_tail = loglik_samples[len(loglik_samples)/2:]
+        seqnum = concatenate([repeat(sequence_num * 2, len(theta1_samples_tail)/2),
+                              repeat(sequence_num * 2 + 1, 
+                                     len(theta1_samples_tail) - len(theta1_samples_tail)/2)])
+        df = DataFrame({'theta1':theta1_samples_tail,'theta2':theta2_samples_tail,
+                        'loglik':loglik_samples_tail,'seqnum':seqnum})
+        dfs.append(df)
+    whole_df = pandas.concat(dfs)
+    print whole_df.quantile([0.025,0.5,0.975])
+    W_values = whole_df.groupby('seqnum').var().mean(axis=0)
+    B_values = whole_df.groupby('seqnum').mean().var(axis=0) * (seq_len)
+    print "Rhat values:"
+    print sqrt((seq_len-1.0)/seq_len + 1.0/seq_len * (B_values / W_values))
+    print "\n\n"
 

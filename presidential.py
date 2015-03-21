@@ -3,7 +3,7 @@
 
 # <markdowncell>
 
-# # Forecasting Presidental Elections (BDA 15.2) #
+# # Forecasting Presidential Elections (BDA 15.2) #
 # 
 # In this notebook, we learn about the advantage of using hierarchical linear model as opposed to non-hierarchical model, by building a forecasting model for presidential elections.  
 
@@ -34,7 +34,7 @@ presidental_df.head()
 
 # <markdowncell>
 
-# The data looks like above.  For detailed description of each column, please read skipped rows at the top of the file.
+# The data looks like above.  For detailed description of each column, please look at skipped rows at the top of the file and the corresponding book chapter in BDA book; here we just consider ``constant``, ``n1`` to ``r6`` columns as given covariates.
 # 
 # Here, we want to reproduce Figure 15.1, but unfortunately we cannot infer mapping from state indices to actual state names, so I am just showing points here.  The below plot shows how the share of democratic vote in 1984 is related to that in 1988; almost linear relationship is observed.
 
@@ -49,6 +49,7 @@ fig, ax = plt.subplots()
 df_1984_1988.plot(x='Dvote1984',y='Dvote1988', kind='scatter', ax=ax)
 ax.set_xlabel('Dem vote by state (1984)')
 ax.set_ylabel('Dem vote by state (1988)')
+ax.set_aspect(1)
 
 # <markdowncell>
 
@@ -65,49 +66,92 @@ fig, ax = plt.subplots()
 df_1972_1976.plot(x='Dvote1972',y='Dvote1976', kind='scatter', ax=ax)
 ax.set_xlabel('Dem vote by state (1972)')
 ax.set_ylabel('Dem vote by state (1976)')
+ax.set_aspect(1)
+
+# <markdowncell>
+
+# Now, let us do the actual regression analysis to form a model.  We confine ourselves to years before 1992, and drop every row that contains missing values:
 
 # <codecell>
 
 df_before1988 = presidental_df[presidental_df['year'] <= 1988].dropna(axis=0)
 
+# <markdowncell>
+
+# I generally do not like one-letter variables, but when doing regression analysis it is very tempting...!
+
 # <codecell>
 
+# let us predict percentages instead of fractions
 X = matrix(df_before1988.iloc[:,4:].as_matrix())
-y = matrix(df_before1988.loc[:,('Dvote')].as_matrix()).T
+y = matrix(df_before1988.loc[:,('Dvote')].as_matrix()).T * 100
+
+# <markdowncell>
+
+# For linear regression, posterior distribution can be simply described by MLE.
 
 # <codecell>
 
-XtX = X.T * X
-Xty = X.T * y
-Q,R = numpy.linalg.qr(X)
-R_inv = np.linalg.inv(R)
-beta_hat = np.linalg.solve(R, Q.T * y)
-n = X.shape[0]
-k = X.shape[1]
-s_sq = (np.asarray(y - X * beta_hat) ** 2).sum() / (n-k)
+def linear_regression(X,y):
+    XtX = X.T * X
+    Xty = X.T * y
+    Q,R = numpy.linalg.qr(X)
+    R_inv = np.linalg.inv(R)
+    beta_hat = np.linalg.solve(R, Q.T * y)
+    n = X.shape[0]
+    k = X.shape[1]
+    s_sq = (np.asarray(y - X * beta_hat) ** 2).sum() / (n-k)
+    return beta_hat, s_sq
+
+beta_hat, s_sq = linear_regression(X,y)
+
+# <markdowncell>
+
+# Now we will be using national RMSE (root mean squared error) as test statistic for model checking.  Please refer to the book for the precise definition.
 
 # <codecell>
 
-def rmse_nationwide(X, beta):
+def rmse_nationwide(X, y, beta):
     return sqrt(np.mean(Series(np.squeeze(np.asarray(y - X * beta)), 
                                np.asarray(df_before1988['year'])).groupby(level=0).mean() ** 2))
-rmse_nationwide(X, beta_hat)
+rmse_nationwide(X, y, beta_hat)
+
+# <markdowncell>
+
+# Now we sample 200 $\beta, \sigma^2$ parameters from the posterior distribution, generate new dependent variable $y^{\text{rep}}$, and compare how the test statistic changes as $y$ is switched to $y^{\text{rep}}$.
 
 # <codecell>
 
 sample_num = 200
+n = X.shape[0]; k = X.shape[1]
+Q,R = numpy.linalg.qr(X)
+R_inv = np.linalg.inv(R)
+
+original_rmses = []
+replicated_rmses = []
+
 for sample_index in range(sample_num):
     sigma_sq = r_inv_chisquare(1, n-k, s_sq)[0]
     sampled_beta = beta_hat + R_inv * np.asmatrix(np.random.normal(size=k)).T * sqrt(sigma_sq)
-    print rmse_nationwide(X, sampled_beta)
+    original_rmses.append(rmse_nationwide(X, y, sampled_beta))
+    sampled_y = X * sampled_beta + sqrt(sigma_sq) * np.asmatrix(np.random.normal(size=n)).T
+    replicated_rmses.append(rmse_nationwide(X, sampled_y, sampled_beta))
 
 # <codecell>
 
-plt.hist(y - X * beta_hat)
+plt.scatter(original_rmses, replicated_rmses, marker='.', s=1)
+plt.xlim(0,1.5)
+plt.ylim(0,1.5)
+plt.plot([0,3], [0,3], color='k', linestyle='-', linewidth=1)
+plt.axes().set_aspect(1)
+plt.xlabel(r'$T(y,\theta)$')
+plt.ylabel(r'$T(y^{rep},\theta)$')
 
-# <codecell>
+# <markdowncell>
 
-plt.scatter(X * beta_hat, y - X * beta_hat)
+# Above plot corresponds to Figure 15.2 in the book.  It can be seen that realized test variable is much smaller than that from replicated data; in other words, we might be underestimating the magnitude of prediction error.  Authors argue that this might be due to correlation of dependent variable within observations in the same year.  This motivates us to move on to hierarchical model.
+# 
+# Note that the scale of this plot is not the same to that of Figure 15.2.  Please let me know if you find errors in my code!
 
 # <codecell>
 
